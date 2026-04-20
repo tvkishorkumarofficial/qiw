@@ -1,0 +1,387 @@
+name: Repository 5 - Unified Night Cycle (12h Offset) (03:30 AM IST)
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: daily-docker-2-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  docker-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 290
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: |
+          chmod +x msr_modes_randomized_time/script.sh
+
+      - name: Determine Execution Mode
+        id: mode
+        env:
+          MATRIX_DB_HOST: ${{ secrets.MATRIX_DB_HOST }}
+        run: |
+          if [ -n "$MATRIX_DB_HOST" ] && [ "$MATRIX_DB_HOST" != "null" ]; then
+             echo "EXECUTION_MODE=DYNAMIC" >> $GITHUB_ENV
+             echo "Execution Mode: DYNAMIC (Matrix DB Bootstrapper)"
+          else
+             echo "EXECUTION_MODE=LEGACY" >> $GITHUB_ENV
+             echo "Execution Mode: LEGACY (Manual GitHub Secrets)"
+          fi
+
+      - name: Matrix DB Bootstrapper (Dynamic Mode)
+        id: bootstrapper
+        if: env.EXECUTION_MODE == 'DYNAMIC'
+        env:
+          ORCHESTRATOR_TOKEN: ${{ secrets.ORCHESTRATOR_TOKEN }}
+          GROUP_ID: ${{ secrets.GROUP_ID }}
+          MATRIX_DB_HOST: ${{ secrets.MATRIX_DB_HOST }}
+        run: |
+          echo "Contacting Matrix DB for Pod Environment..."
+          curl -s -H "Authorization: Bearer $ORCHESTRATOR_TOKEN" "$MATRIX_DB_HOST/api/farm/runner-env?group=$GROUP_ID" > runner_env.json
+
+          # Inject all variables directly into the runner memory!
+          echo "ACCOUNT_4=$(jq -r .account_4 runner_env.json)" >> $GITHUB_ENV
+          echo "ACCOUNT_5=$(jq -r .account_5 runner_env.json)" >> $GITHUB_ENV
+          echo "ACCOUNT_6=$(jq -r .account_6 runner_env.json)" >> $GITHUB_ENV
+          echo "ACCOUNT_10=$(jq -r .account_10 runner_env.json)" >> $GITHUB_ENV
+          echo "ACCOUNT_11=$(jq -r .account_11 runner_env.json)" >> $GITHUB_ENV
+          echo "ACCOUNT_12=$(jq -r .account_12 runner_env.json)" >> $GITHUB_ENV
+
+          echo "SESSION_RESTORE_URL_FOUR=$(jq -r .restore_url_4 runner_env.json)" >> $GITHUB_ENV
+          echo "SESSION_RESTORE_URL_FIVE=$(jq -r .restore_url_5 runner_env.json)" >> $GITHUB_ENV
+          echo "SESSION_RESTORE_URL_SIX=$(jq -r .restore_url_6 runner_env.json)" >> $GITHUB_ENV
+          echo "SESSION_RESTORE_URL_TEN=$(jq -r .restore_url_10 runner_env.json)" >> $GITHUB_ENV
+          echo "SESSION_RESTORE_URL_ELEVEN=$(jq -r .restore_url_11 runner_env.json)" >> $GITHUB_ENV
+          echo "SESSION_RESTORE_URL_TWELVE=$(jq -r .restore_url_12 runner_env.json)" >> $GITHUB_ENV
+          echo "ACCOUNT_16=$(jq -r .account_16 runner_env.json)" >> $GITHUB_ENV
+          echo "ACCOUNT_17=$(jq -r .account_17 runner_env.json)" >> $GITHUB_ENV
+          echo "ACCOUNT_18=$(jq -r .account_18 runner_env.json)" >> $GITHUB_ENV
+          echo "SESSION_RESTORE_URL_SIXTEEN=$(jq -r .restore_url_16 runner_env.json)" >> $GITHUB_ENV
+          echo "SESSION_RESTORE_URL_SEVENTEEN=$(jq -r .restore_url_17 runner_env.json)" >> $GITHUB_ENV
+          echo "SESSION_RESTORE_URL_EIGHTEEN=$(jq -r .restore_url_18 runner_env.json)" >> $GITHUB_ENV
+
+          echo "DISCORD_WEBHOOK_URL=$(jq -r .discord_webhook_url runner_env.json)" >> $GITHUB_ENV
+
+          echo "GROUP_MODE=$(jq -r '.group_mode // "DEFAULT"' runner_env.json)" >> $GITHUB_ENV
+
+          echo "Successfully injected secrets from Matrix DB!"
+
+      - name: Legacy Secret Injector (Legacy Mode)
+        id: legacy
+        if: env.EXECUTION_MODE == 'LEGACY'
+        env:
+          ACCOUNT_4: ${{ secrets.ACCOUNT_4 }}
+          ACCOUNT_5: ${{ secrets.ACCOUNT_5 }}
+          ACCOUNT_6: ${{ secrets.ACCOUNT_6 }}
+          SESSION_RESTORE_URL_FOUR: ${{ secrets.SESSION_RESTORE_URL_FOUR }}
+          SESSION_RESTORE_URL_FIVE: ${{ secrets.SESSION_RESTORE_URL_FIVE }}
+          SESSION_RESTORE_URL_SIX: ${{ secrets.SESSION_RESTORE_URL_SIX }}
+          SCRIPT_URL_FOUR: ${{ secrets.SCRIPT_URL_FOUR }}
+          SCRIPT_URL_FIVE: ${{ secrets.SCRIPT_URL_FIVE }}
+          SCRIPT_URL_SIX: ${{ secrets.SCRIPT_URL_SIX }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          COLLECTOR_URL: ${{ secrets.COLLECTOR_URL }}
+          COLLECTOR_TOKEN: ${{ secrets.COLLECTOR_TOKEN }}
+          HMAC_SECRET: ${{ secrets.HMAC_SECRET }}
+        run: |
+          echo "Injecting standard GitHub Secrets into Environment..."
+          echo "ACCOUNT_4=$ACCOUNT_4" >> $GITHUB_ENV
+          echo "ACCOUNT_5=$ACCOUNT_5" >> $GITHUB_ENV
+          echo "ACCOUNT_6=$ACCOUNT_6" >> $GITHUB_ENV
+
+          echo "SESSION_RESTORE_URL_FOUR=$SESSION_RESTORE_URL_FOUR" >> $GITHUB_ENV
+          echo "SESSION_RESTORE_URL_FIVE=$SESSION_RESTORE_URL_FIVE" >> $GITHUB_ENV
+          echo "SESSION_RESTORE_URL_SIX=$SESSION_RESTORE_URL_SIX" >> $GITHUB_ENV
+
+          echo "SCRIPT_URL_FOUR=$SCRIPT_URL_FOUR" >> $GITHUB_ENV
+          echo "SCRIPT_URL_FIVE=$SCRIPT_URL_FIVE" >> $GITHUB_ENV
+          echo "SCRIPT_URL_SIX=$SCRIPT_URL_SIX" >> $GITHUB_ENV
+
+          echo "DISCORD_WEBHOOK_URL=$DISCORD_WEBHOOK_URL" >> $GITHUB_ENV
+          echo "GROUP_MODE=${{ secrets.GROUP_MODE || 'DEFAULT' }}" >> $GITHUB_ENV
+
+      - name: Calculate Daily Active Pod
+        id: calculate
+        env:
+          GROUP_ID: ${{ secrets.GROUP_ID }}
+          MATRIX_DB_HOST: ${{ secrets.MATRIX_DB_HOST }}
+        run: |
+          echo "JOB_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+          echo "IP=$(curl -s https://api.ipify.org)" >> $GITHUB_ENV
+
+          DAY_NUM=$(date +%j | sed 's/^0*//')
+
+          if [ "$GROUP_MODE" == "2_DAY_GAP" ]; then
+             BANK_CYCLE=$(( (DAY_NUM - 1) % 3 ))
+
+             if [ "$BANK_CYCLE" -eq 0 ]; then
+                BANK="A"
+                # Bank A wakes up every 3 days. We count its total awakenings this year.
+                AWAKENINGS=$(( (DAY_NUM - 1) / 3 ))
+                INDEX=$(( AWAKENINGS % 3 ))
+             elif [ "$BANK_CYCLE" -eq 1 ]; then
+                BANK="B"
+                # Bank B wakes up on days 2, 5, 8.
+                AWAKENINGS=$(( (DAY_NUM - 2) / 3 ))
+                INDEX=$(( AWAKENINGS % 3 ))
+             else
+                BANK="C"
+                # Bank C wakes up on days 3, 6, 9.
+                AWAKENINGS=$(( (DAY_NUM - 3) / 3 ))
+                INDEX=$(( AWAKENINGS % 3 ))
+             fi
+
+          elif [ "$GROUP_MODE" == "1_DAY_GAP" ]; then
+             IS_EVEN_DAY=$(( DAY_NUM % 2 ))
+
+             if [ "$IS_EVEN_DAY" -eq 0 ]; then
+                BANK="B"
+                # Bank B wakes up on even days (2, 4, 6)
+                AWAKENINGS=$(( (DAY_NUM - 2) / 2 ))
+                INDEX=$(( AWAKENINGS % 3 ))
+             else
+                BANK="A"
+                # Bank A wakes up on odd days (1, 3, 5)
+                AWAKENINGS=$(( (DAY_NUM - 1) / 2 ))
+                INDEX=$(( AWAKENINGS % 3 ))
+             fi
+
+          else
+             # Standard daily rotation (Bank A only)
+             INDEX=$(( (DAY_NUM - 1) % 3 ))
+             BANK="A"
+          fi
+
+          if [ "$BANK" == "A" ]; then
+             if [ "$INDEX" -eq 0 ]; then
+                SLOT_NAME="five"
+                ACC_VAR="ACCOUNT_5"
+                RESTORE_VAR="SESSION_RESTORE_URL_FIVE"
+                SCRIPT_VAR="SCRIPT_URL_FIVE"
+             elif [ "$INDEX" -eq 1 ]; then
+                SLOT_NAME="six"
+                ACC_VAR="ACCOUNT_6"
+                RESTORE_VAR="SESSION_RESTORE_URL_SIX"
+                SCRIPT_VAR="SCRIPT_URL_SIX"
+             else
+                SLOT_NAME="four"
+                ACC_VAR="ACCOUNT_4"
+                RESTORE_VAR="SESSION_RESTORE_URL_FOUR"
+                SCRIPT_VAR="SCRIPT_URL_FOUR"
+             fi
+          elif [ "$BANK" == "B" ]; then
+             if [ "$INDEX" -eq 0 ]; then
+                SLOT_NAME="eleven"
+                ACC_VAR="ACCOUNT_11"
+                RESTORE_VAR="SESSION_RESTORE_URL_ELEVEN"
+                SCRIPT_VAR="SCRIPT_URL_ELEVEN"
+             elif [ "$INDEX" -eq 1 ]; then
+                SLOT_NAME="twelve"
+                ACC_VAR="ACCOUNT_12"
+                RESTORE_VAR="SESSION_RESTORE_URL_TWELVE"
+                SCRIPT_VAR="SCRIPT_URL_TWELVE"
+             else
+                SLOT_NAME="ten"
+                ACC_VAR="ACCOUNT_10"
+                RESTORE_VAR="SESSION_RESTORE_URL_TEN"
+                SCRIPT_VAR="SCRIPT_URL_TEN"
+             fi
+          elif [ "$BANK" == "C" ]; then
+             if [ "$INDEX" -eq 0 ]; then
+                SLOT_NAME="seventeen"
+                ACC_VAR="ACCOUNT_17"
+                RESTORE_VAR="SESSION_RESTORE_URL_SEVENTEEN"
+                SCRIPT_VAR="SCRIPT_URL_SEVENTEEN"
+             elif [ "$INDEX" -eq 1 ]; then
+                SLOT_NAME="eighteen"
+                ACC_VAR="ACCOUNT_18"
+                RESTORE_VAR="SESSION_RESTORE_URL_EIGHTEEN"
+                SCRIPT_VAR="SCRIPT_URL_EIGHTEEN"
+             else
+                SLOT_NAME="sixteen"
+                ACC_VAR="ACCOUNT_16"
+                RESTORE_VAR="SESSION_RESTORE_URL_SIXTEEN"
+                SCRIPT_VAR="SCRIPT_URL_SIXTEEN"
+             fi
+          fi
+
+          echo "Using ${SLOT_NAME}.sh"
+          eval "ACTIVE_ACCOUNT=\$$ACC_VAR"
+          echo "ACTIVE_ACCOUNT=$ACTIVE_ACCOUNT" >> $GITHUB_ENV
+          echo "ACCOUNT_NAME=Account $(echo $ACC_VAR | cut -d'_' -f2)" >> $GITHUB_ENV
+          echo "SLOT_NAME=$SLOT_NAME" >> $GITHUB_ENV
+
+          if [ "$EXECUTION_MODE" == "DYNAMIC" ]; then
+             echo "TARGET_SCRIPT_URL=$MATRIX_DB_HOST/api/farm/payload?group=$GROUP_ID&sequence=${SLOT_NAME}" >> $GITHUB_ENV
+          else
+             eval "TARGET_SCRIPT_URL=\$$SCRIPT_VAR"
+             echo "TARGET_SCRIPT_URL=$TARGET_SCRIPT_URL" >> $GITHUB_ENV
+          fi
+
+          eval "TARGET_RESTORE_URL=\$$RESTORE_VAR"
+          echo "TARGET_RESTORE_URL=$TARGET_RESTORE_URL" >> $GITHUB_ENV
+
+      - name: Send IP to collector (Ingest)
+        continue-on-error: true
+        env:
+          COLLECTOR_URL: ${{ secrets.COLLECTOR_URL }}
+          COLLECTOR_TOKEN: ${{ secrets.COLLECTOR_TOKEN }}
+          HMAC_SECRET: ${{ secrets.HMAC_SECRET }}
+        run: |
+          if [ -z "$COLLECTOR_URL" ] || [ "$COLLECTOR_URL" == "null" ] || [ "$COLLECTOR_URL" == "" ]; then
+             echo "No Collector URL provided. Skipping."
+             exit 0
+          fi
+
+          ACC="${ACTIVE_ACCOUNT:-${{ github.repository_owner }}}"
+          ACC_LABEL="${ACCOUNT_NAME:-${{ github.repository_owner }}}"
+
+          payload=$(jq -n \
+            --arg account  "$ACC" \
+            --arg label    "$ACC_LABEL" \
+            --arg repo     "${{ github.repository }}" \
+            --arg run_id   "${{ github.run_id }}" \
+            --arg job      "${{ github.job }}" \
+            --arg workflow "${{ github.workflow }}" \
+            --arg ip       "${IP:-unknown}" \
+            --arg ts       "${JOB_START}" \
+            '{account:$account,account_label:$label,repo:$repo,run_id:$run_id,job:$job,workflow:$workflow,ip:$ip,ts:$ts}')
+
+          sig=$(printf "%s" "$payload" | openssl dgst -sha256 -hmac "$HMAC_SECRET" -binary | base64)
+
+          curl -s -X POST "$COLLECTOR_URL/ingest" \
+            -H "Authorization: Bearer $COLLECTOR_TOKEN" \
+            -H "Content-Type: application/json" \
+            -H "X-Signature: $sig" \
+            -d "$payload" || true
+
+      - name: Ask collector if we should run (Gate)
+        id: gate
+        continue-on-error: true
+        env:
+          COLLECTOR_URL: ${{ secrets.COLLECTOR_URL }}
+          COLLECTOR_TOKEN: ${{ secrets.COLLECTOR_TOKEN }}
+          HMAC_SECRET: ${{ secrets.HMAC_SECRET }}
+        run: |
+          if [ -z "$COLLECTOR_URL" ] || [ "$COLLECTOR_URL" == "null" ] || [ "$COLLECTOR_URL" == "" ]; then
+             echo "No Collector URL provided. Defaulting to SHOULD_RUN=true."
+             echo "SHOULD_RUN=true" >> $GITHUB_ENV
+             exit 0
+          fi
+
+          ACC="${ACTIVE_ACCOUNT:-${{ github.repository_owner }}}"
+          ACC_LABEL="${ACCOUNT_NAME:-${{ github.repository_owner }}}"
+
+          gate_payload=$(jq -n \
+            --arg account  "$ACC" \
+            --arg label    "$ACC_LABEL" \
+            --arg repo     "${{ github.repository }}" \
+            --arg run_id   "${{ github.run_id }}" \
+            --arg job      "${{ github.job }}" \
+            --arg workflow "${{ github.workflow }}" \
+            --arg ip       "${IP:-unknown}" \
+            --arg ts       "${JOB_START}" \
+            '{account:$account,account_label:$label,repo:$repo,run_id:$run_id,job:$job,workflow:$workflow,ip:$ip,ts:$ts}')
+
+          gate_sig=$(printf "%s" "$gate_payload" | openssl dgst -sha256 -hmac "$HMAC_SECRET" -binary | base64)
+
+          resp=$(curl -s -X POST "$COLLECTOR_URL/gate" \
+            -H "Authorization: Bearer $COLLECTOR_TOKEN" \
+            -H "Content-Type: application/json" \
+            -H "X-Signature: $gate_sig" \
+            -d "$gate_payload" || echo '{}')
+
+          should_run=$(echo "$resp" | jq -r '.should_run // "true"')
+          reason=$(echo "$resp" | jq -r '.reason // ""')
+
+          echo "SHOULD_RUN=$should_run" >> $GITHUB_ENV
+          echo "GATE_REASON=$reason" >> $GITHUB_ENV
+
+      - name: Abort early (Policy Check)
+        if: env.SHOULD_RUN != 'true'
+        run: |
+          echo "Policy triggered: ${{ env.GATE_REASON }}. Skipping project run." >> $GITHUB_STEP_SUMMARY
+          exit 0
+
+      - name: Run Unified Dispatcher script
+        if: env.SHOULD_RUN == 'true'
+        env:
+          ORCHESTRATOR_TOKEN: ${{ secrets.ORCHESTRATOR_TOKEN }}
+          PROJECT_NAME: '007-of-five'
+          SESSION_COPY_DELAY: 3400 # Wait 95 minutes before copying sessions
+          ENABLE_SESSION_UPLOAD: 'true' # Set to 'false' to disable artifact upload
+          ENABLE_ARTIFACT_UPLOAD: 'true' # Upload as Build Artifact
+          ENABLE_RELEASE_UPLOAD: 'false' # Upload to GitHub Release
+          ENABLE_SESSION_RESTORE: 'false' # Set to 'true' to enable session restore (and disable upload)
+        run: |
+          cd msr_modes_randomized_time
+          ./script.sh
+
+      - name: Upload Sessions Artifact
+        if: env.SHOULD_RUN == 'true' && env.ENABLE_ARTIFACT_UPLOAD == 'true' && env.ARTIFACT_CREATED == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: sessions.zip
+          retention-days: 5
+
+      - name: Keep Repository Active (Prevent 60-Day Disable)
+        if: always()
+        env:
+          # Configuration for Keepalive commit
+          # 'always'   = Commit every single time the action runs (Great for testing!)
+          # 'weekly'   = Commit once every 7 days
+          # '25_days'  = Commit once every 25 days (Very safe buffer)
+          # 'monthly'  = Commit once every 30 days
+          # 'default'  = Commit once every 50 days (Cleanest history)
+          KEEPALIVE_MODE: 'always'
+        run: |
+          echo "Checking keepalive policy..."
+
+          # Calculate days since last commit
+          LAST_COMMIT_TS=$(git log -1 --format="%ct" || echo "0")
+          CURRENT_TS=$(date +%s)
+          DAYS_SINCE_COMMIT=$(( (CURRENT_TS - LAST_COMMIT_TS) / 86400 ))
+          echo "Days since last commit: $DAYS_SINCE_COMMIT"
+
+          SHOULD_COMMIT=false
+          if [ "$KEEPALIVE_MODE" = "always" ]; then
+            SHOULD_COMMIT=true
+          elif [ "$KEEPALIVE_MODE" = "weekly" ] && [ "$DAYS_SINCE_COMMIT" -ge 7 ]; then
+            SHOULD_COMMIT=true
+          elif [ "$KEEPALIVE_MODE" = "25_days" ] && [ "$DAYS_SINCE_COMMIT" -ge 25 ]; then
+            SHOULD_COMMIT=true
+          elif [ "$KEEPALIVE_MODE" = "monthly" ] && [ "$DAYS_SINCE_COMMIT" -ge 30 ]; then
+            SHOULD_COMMIT=true
+          elif [ "$KEEPALIVE_MODE" = "default" ] && [ "$DAYS_SINCE_COMMIT" -ge 50 ]; then
+            SHOULD_COMMIT=true
+          fi
+
+          if [ "$SHOULD_COMMIT" = "true" ]; then
+            echo "Keepalive condition met. Creating automated commit..."
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+            # Create or update an invisible keepalive file
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > .github_keepalive
+
+            git add .github_keepalive
+            # Check if there are changes to commit (prevents failing if somehow nothing changed)
+            if git diff --staged --quiet; then
+               echo "No changes to commit."
+            else
+               git commit -m "chore: automated keepalive commit to prevent workflow deactivation"
+               git push
+               echo "Keepalive commit pushed successfully."
+            fi
+          else
+            echo "Keepalive condition not met (Mode: $KEEPALIVE_MODE). Skipping commit."
+          fi
