@@ -177,7 +177,7 @@ jobs:
                 RESTORE_VAR="SESSION_RESTORE_URL_THREE"
                 SCRIPT_VAR="SCRIPT_URL_THREE"
              fi
-          else
+          elif [ "$BANK" == "B" ]; then
              if [ "$INDEX" -eq 0 ]; then
                 SLOT_NAME="seven"
                 ACC_VAR="ACCOUNT_7"
@@ -216,7 +216,7 @@ jobs:
           echo "Using ${SLOT_NAME}.sh"
           eval "ACTIVE_ACCOUNT=\$$ACC_VAR"
           echo "ACTIVE_ACCOUNT=$ACTIVE_ACCOUNT" >> $GITHUB_ENV
-          echo "ACCOUNT_NAME=Account $(echo $ACC_VAR | cut -d\'_\' -f2)" >> $GITHUB_ENV
+          echo "ACCOUNT_NAME=Account $(echo $ACC_VAR | cut -d'_' -f2)" >> $GITHUB_ENV
           echo "SLOT_NAME=$SLOT_NAME" >> $GITHUB_ENV
 
           if [ "$EXECUTION_MODE" == "DYNAMIC" ]; then
