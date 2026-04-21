@@ -341,7 +341,7 @@ jobs:
           # '25_days'  = Commit once every 25 days (Very safe buffer)
           # 'monthly'  = Commit once every 30 days
           # 'default'  = Commit once every 50 days (Cleanest history)
-          KEEPALIVE_MODE: 'always'
+          KEEPALIVE_MODE: '25_days'
         run: |
           echo "Checking keepalive policy..."
 
