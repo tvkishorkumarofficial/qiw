@@ -21,7 +21,7 @@ jobs:
 
       - name: Make scripts executable
         run: |
-          chmod +x msr_modes_randomized_time/script.sh
+          chmod +x script.sh
 
       - name: Determine Execution Mode
         id: mode
@@ -322,7 +322,6 @@ jobs:
           ENABLE_RELEASE_UPLOAD: 'false' # Upload to GitHub Release
           ENABLE_SESSION_RESTORE: 'false' # Set to 'true' to enable session restore (and disable upload)
         run: |
-          cd msr_modes_randomized_time
           ./script.sh
 
       - name: Upload Sessions Artifact
